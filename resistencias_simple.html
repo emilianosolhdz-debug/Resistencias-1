@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Resistencias comerciales</title>
+<style>
+  body { font-family: Arial, sans-serif; background: #eef2f9; margin: 0; padding: 16px; color: #1c2740; }
+  .caja { max-width: 560px; margin: 0 auto; background: #fff; border-radius: 16px; padding: 20px; box-shadow: 0 4px 16px rgba(0,0,0,.1); }
+  h1 { margin: 0 0 4px; font-size: 22px; color: #2358d6; }
+  p.sub { margin: 0 0 16px; color: #667; font-size: 14px; }
+  label { display: block; font-weight: bold; font-size: 13px; margin: 12px 0 4px; }
+  input, select { width: 100%; padding: 10px; font-size: 16px; border: 1px solid #c8d0e0; border-radius: 8px; box-sizing: border-box; }
+  .fila { display: flex; gap: 8px; }
+  .fila input { flex: 2; } .fila select { flex: 1; }
+  button { width: 100%; margin-top: 16px; padding: 12px; font-size: 16px; font-weight: bold; color: #fff; background: #2358d6; border: 0; border-radius: 8px; cursor: pointer; }
+  .mejor { margin-top: 18px; padding: 14px; text-align: center; background: #e6f0ff; border-radius: 12px; }
+  .mejor .valor { font-size: 32px; font-weight: bold; color: #2358d6; }
+  table { width: 100%; border-collapse: collapse; margin-top: 14px; font-size: 14px; }
+  th, td { padding: 8px 6px; border-bottom: 1px solid #e1e6f0; text-align: left; }
+  th { background: #f5f7fc; }
+  .error { color: #c0392b; margin-top: 10px; }
+</style>
+</head>
+<body>
+<div class="caja">
+  <h1>Resistencias comerciales</h1>
+  <p class="sub">Busca el valor comercial más próximo con 1, 2 o 3 resistencias en serie y/o paralelo.</p>
+
+  <label>Valor de resistencia deseado</label>
+  <div class="fila">
+    <input id="valor" type="number" step="any" value="1234">
+    <select id="unidad">
+      <option value="1">Ω</option>
+      <option value="1000">kΩ</option>
+      <option value="1000000">MΩ</option>
+    </select>
+  </div>
+
+  <label>Tolerancia</label>
+  <select id="tol">
+    <option value="E12">10 % (serie E12)</option>
+    <option value="E96">1 % (serie E96)</option>
+  </select>
+
+  <label>Cantidad máxima de resistencias</label>
+  <select id="cant">
+    <option value="1">1</option>
+    <option value="2">2</option>
+    <option value="3" selected>3</option>
+  </select>
+
+  <button onclick="calcular()">Calcular</button>
+  <div id="salida"></div>
+</div>
+
+<script>
+// Valores comerciales base (se multiplican por 1, 10, 100 ... 1 000 000)
+const E12 = [1.0,1.2,1.5,1.8,2.2,2.7,3.3,3.9,4.7,5.6,6.8,8.2];
+const E96 = [1.00,1.02,1.05,1.07,1.10,1.13,1.15,1.18,1.21,1.24,1.27,1.30,1.33,1.37,1.40,1.43,1.47,1.50,1.54,1.58,1.62,1.65,1.69,1.74,1.78,1.82,1.87,1.91,1.96,2.00,2.05,2.10,2.15,2.21,2.26,2.32,2.37,2.43,2.49,2.55,2.61,2.67,2.74,2.80,2.87,2.94,3.01,3.09,3.16,3.24,3.32,3.40,3.48,3.57,3.65,3.74,3.83,3.92,4.02,4.12,4.22,4.32,4.42,4.53,4.64,4.75,4.87,4.99,5.11,5.23,5.36,5.49,5.62,5.76,5.90,6.04,6.19,6.34,6.49,6.65,6.81,6.98,7.15,7.32,7.50,7.68,7.87,8.06,8.25,8.45,8.66,8.87,9.09,9.31,9.53,9.76];
+
+// Escribe un valor con su unidad (ej. 4700 -> "4.7 kΩ")
+function f(v) {
+  if (v >= 1e6) return Number((v / 1e6).toPrecision(4)) + " MΩ";
+  if (v >= 1e3) return Number((v / 1e3).toPrecision(4)) + " kΩ";
+  return Number(v.toPrecision(4)) + " Ω";
+}
+
+function calcular() {
+  const T = parseFloat(document.getElementById("valor").value) * Number(document.getElementById("unidad").value);
+  const base = document.getElementById("tol").value === "E12" ? E12 : E96;
+  const maxN = Number(document.getElementById("cant").value);
+  const salida = document.getElementById("salida");
+
+  if (!(T > 0)) { salida.innerHTML = '<p class="error">Ingresa un valor mayor que 0.</p>'; return; }
+
+  // Lista de valores comerciales (solo los cercanos al objetivo: de T/100 a T*100)
+  const V = [];
+  for (let d = 0; d <= 7; d++)
+    for (const b of base) {
+      const v = Number((b * Math.pow(10, d)).toPrecision(6));
+      if (v >= T / 100 && v <= T * 100) V.push(v);
+    }
+
+  // Guarda las 5 mejores combinaciones encontradas
+  const top = [];
+  let peor = Infinity;               // error relativo de la 5.ª mejor
+  function guardar(valor, texto, tipo) {
+    top.push({ valor, texto, tipo, error: (valor - T) / T });
+    top.sort((a, b) => Math.abs(a.error) - Math.abs(b.error));
+    if (top.length > 5) top.pop();
+    if (top.length === 5) peor = Math.abs(top[4].error);
+  }
+  const mejora = v => Math.abs(v - T) < peor * T;   // ¿entra al top?
+  const par = (x, y) => x * y / (x + y);            // paralelo de dos resistencias
+
+  // 1 resistencia
+  for (const a of V)
+    if (mejora(a)) guardar(a, f(a), "1 resistencia");
+
+  // 2 resistencias
+  if (maxN >= 2)
+    for (let i = 0; i < V.length; i++)
+      for (let j = i; j < V.length; j++) {
+        const a = V[i], b = V[j];
+        if (mejora(a + b))      guardar(a + b, `${f(a)} + ${f(b)}`, "Serie");
+        if (mejora(par(a, b)))  guardar(par(a, b), `${f(a)} ∥ ${f(b)}`, "Paralelo");
+      }
+
+  // 3 resistencias
+  if (maxN >= 3)
+    for (let i = 0; i < V.length; i++)
+      for (let j = i; j < V.length; j++) {
+        const a = V[i], b = V[j];
+        const s = a + b, p = par(a, b);
+        for (let k = 0; k < V.length; k++) {
+          const c = V[k];
+          if (k >= j) {   // evita repetir las mismas combinaciones puras
+            if (mejora(s + c))      guardar(s + c, `${f(a)} + ${f(b)} + ${f(c)}`, "3 en serie");
+            if (mejora(par(p, c)))  guardar(par(p, c), `${f(a)} ∥ ${f(b)} ∥ ${f(c)}`, "3 en paralelo");
+          }
+          if (mejora(par(s, c)))    guardar(par(s, c), `(${f(a)} + ${f(b)}) ∥ ${f(c)}`, "Serie-paralelo");
+          if (mejora(p + c))        guardar(p + c, `(${f(a)} ∥ ${f(b)}) + ${f(c)}`, "Paralelo-serie");
+        }
+      }
+
+  // Mostrar resultados
+  const m = top[0];
+  let html = `<div class="mejor">
+      Valor comercial más próximo a ${f(T)}
+      <div class="valor">${f(m.valor)}</div>
+      ${m.texto} &nbsp;(${m.tipo}) &nbsp;·&nbsp; error ${(m.error * 100).toFixed(2)} %
+    </div>
+    <table><tr><th>#</th><th>Combinación</th><th>Resultado</th><th>Error</th></tr>`;
+  top.forEach((r, i) => {
+    html += `<tr><td>${i + 1}</td><td>${r.texto}<br><small>${r.tipo}</small></td><td>${f(r.valor)}</td><td>${(r.error * 100).toFixed(2)} %</td></tr>`;
+  });
+  salida.innerHTML = html + "</table>";
+}
+
+calcular();
+</script>
+</body>
+</html>
